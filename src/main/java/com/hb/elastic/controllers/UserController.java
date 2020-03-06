@@ -1,6 +1,7 @@
 package com.hb.elastic.controllers;
 
 import com.hb.elastic.models.User;
+import com.hb.elastic.services.SocketServer;
 import com.hb.elastic.services.UserService;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,8 +14,11 @@ public class UserController {
 
     private final UserService userService;
 
-    public UserController(UserService userService) {
+    private final SocketServer socketServer;
+
+    public UserController(UserService userService, SocketServer socketServer) {
         this.userService = userService;
+        this.socketServer = socketServer;
     }
 
     @PostMapping
@@ -41,5 +45,10 @@ public class UserController {
     @GetMapping
     public List<User> findAll() throws IOException {
        return this.userService.findAll();
+    }
+
+    @GetMapping("/teste/{string}")
+    public void teste(@PathVariable("string") String teste) throws IOException {
+        this.socketServer.streamFile(teste);
     }
 }
