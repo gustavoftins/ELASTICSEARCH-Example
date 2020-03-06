@@ -1,12 +1,18 @@
 package com.hb.elastic.services;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hb.elastic.models.User;
+import org.elasticsearch.action.delete.DeleteRequest;
+import org.elasticsearch.action.delete.DeleteResponse;
+import org.elasticsearch.action.get.GetRequest;
+import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.update.UpdateRequest;
+import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
-import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
@@ -15,13 +21,16 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
 
     @Autowired
     private RestHighLevelClient client;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     public void save(User user) throws IOException {
 
@@ -36,24 +45,62 @@ public class UserService {
         client.index(indexRequest, RequestOptions.DEFAULT);
     }
 
-    public List<Map<String, Object>> findById(String id) throws IOException {
-        SearchRequest searchRequest = new SearchRequest("user");
+    public User findById(String id) throws IOException {
+        GetRequest request = new GetRequest();
+        request.index("user");
+        request.id(id);
+
+        GetResponse response = client.get(request, RequestOptions.DEFAULT);
+        Map<String, Object> result = response.getSource();
+
+        if (result != null) {
+            return objectMapper.convertValue(result, User.class);
+        }
+        throw new IllegalArgumentException("Usuário não encontrado");
+    }
+
+    public String update(String id, User user) throws IOException {
+        User userTobeUpdated = this.findById(id);
+
+        userTobeUpdated.setEmail(user.getEmail());
+        userTobeUpdated.setFirstName(user.getFirstName());
+        userTobeUpdated.setLastName(user.getLastName());
+
+        UpdateRequest updateRequest = new UpdateRequest();
+        updateRequest.index("user");
+        updateRequest.type("_doc");
+        updateRequest.id(id);
+
+        Map<String, Object> mapToRequest = objectMapper.convertValue(userTobeUpdated, Map.class);
+        updateRequest.doc(mapToRequest);
+        UpdateResponse response = client.update(updateRequest, RequestOptions.DEFAULT);
+
+        return response.getResult().name();
+    }
+
+    public String deleteById(String id) throws IOException {
+        DeleteRequest request = new DeleteRequest("user", "_doc", id);
+
+        DeleteResponse response = client.delete(request, RequestOptions.DEFAULT);
+
+        return response.getResult().name();
+    }
+
+    public List<User> findAll() throws IOException {
+        SearchRequest request = new SearchRequest("user");
         SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-        searchSourceBuilder.query(QueryBuilders.termQuery("_id", id));
-        searchSourceBuilder.from(0);
-        searchSourceBuilder.size(1);
-        searchSourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));
+        searchSourceBuilder.query(QueryBuilders.matchAllQuery());
+        request.source(searchSourceBuilder);
 
-        searchRequest.source(searchSourceBuilder);
-
-        SearchResponse response = client.search(searchRequest, RequestOptions.DEFAULT);
+        SearchResponse response = client.search(request, RequestOptions.DEFAULT);
 
         SearchHit[] hits = response.getHits().getHits();
-        List<Map<String, Object>> user = new LinkedList<>();
 
-        for (SearchHit hit : hits) {
-            user.add(hit.getSourceAsMap());
+        List<User> users = new ArrayList<>();
+
+        if (hits.length > 0) {
+            return Arrays.stream(hits).map(hit -> objectMapper.convertValue(hit.getSourceAsMap(), User.class)).collect(Collectors.toList());
         }
-        return user;
+        return new ArrayList<>();
     }
 }
